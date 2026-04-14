@@ -344,7 +344,7 @@ export default function App() {
               </button>
 
               {showGuide && (
-                  <div className="absolute inset-0 bg-black bg-opacity-95 z-50 flex items-center justify-center p-8">
+                  <div className="absolute inset-0 bg-opacity-50 z-50 flex items-center justify-center p-8">
                       <div className="bg-gray-800 p-8 rounded-lg max-w-3xl border border-gray-600 shadow-2xl">
                           <h2 className="text-3xl font-bold text-yellow-400 mb-4">Academic Strategy Application</h2>
                           <div className="space-y-4 text-gray-300">
