@@ -30,6 +30,8 @@ carImg1.src = '/car1.png';
 const carImg2 = new Image(); 
 carImg2.src = '/car2.png';
 
+const getCurrentTime = () => new Date().getTime();
+
 export default function App() {
   const canvasRef = useRef(null);
   const requestRef = useRef(null);
@@ -48,66 +50,98 @@ export default function App() {
     p2: { lap: 0, tyreHealth: 100, speed: 0, currentTyre: 'Hard', message: "Awaiting race start...", computations: {} },
     winner: null,
     matrixData: null,
+    countdown: null
   });
 
   const game = useRef(null);
 
+  const playVoiceCommand = (text, pitch = 1) => {
+    if ('speechSynthesis' in window) {
+      const msg = new SpeechSynthesisUtterance(text);
+      msg.rate = 1.2; 
+      msg.pitch = pitch;
+      window.speechSynthesis.speak(msg);
+    }
+  };
+
   const startGame = () => {
+    if ('speechSynthesis' in window) {
+        const unlockAudio = new SpeechSynthesisUtterance("");
+        window.speechSynthesis.speak(unlockAudio);
+    }
+
     game.current = {
       keys: {},
-      startTime: Date.now(),
+      startTime: getCurrentTime(),
       frameCount: 0,
       raceEnded: false,
+      firstFinisher: null,
+      finishTimer: null,
+      countdown: null,
       p1: { 
           x: 420, y: 130, angle: 0, speed: 0, lap: 0, 
           currentTyre: setupConfig.p1.startTyre, tyreAgeLaps: 0, 
           tyreQueue: [setupConfig.p1.pit1Tyre, setupConfig.p1.pit2Tyre],
-          inPit: false, pitTimer: 0, pittedLap: null, finished: false, time: 0, message: "Race Started! Establishing Mixed Strategy...",
+          inPit: false, pitTimer: 0, pittedLap: null, finished: false, time: 0, message: "Race Started!",
           speedHistory: []
       },
       p2: { 
           x: 420, y: 170, angle: 0, speed: 0, lap: 0, 
           currentTyre: setupConfig.p2.startTyre, tyreAgeLaps: 0, 
           tyreQueue: [setupConfig.p2.pit1Tyre, setupConfig.p2.pit2Tyre],
-          inPit: false, pitTimer: 0, pittedLap: null, finished: false, time: 0, message: "Race Started! Establishing Mixed Strategy...",
+          inPit: false, pitTimer: 0, pittedLap: null, finished: false, time: 0, message: "Race Started!",
           speedHistory: []
       }
     };
     setPhase('PLAYING');
   };
 
-  const checkRaceOver = (winnerId, winTime) => {
+  const checkRaceOver = () => {
+    const { p1, p2 } = game.current;
+    
+    let winnerId = '';
+    if (p1.finished && p2.finished) {
+        winnerId = p1.time < p2.time ? 'p1' : 'p2';
+    } else if (p1.finished) {
+        winnerId = 'p1';
+    } else {
+        winnerId = 'p2';
+    }
+
     const winnerName = winnerId === 'p1' ? 'Player 1' : 'Player 2';
     
     const matrixData = {
         p1Strategy: `Start ${setupConfig.p1.startTyre} -> L${setupConfig.p1.pit1Lap} ${setupConfig.p1.pit1Tyre} -> L${setupConfig.p1.pit2Lap} ${setupConfig.p1.pit2Tyre}`,
         p2Strategy: `Start ${setupConfig.p2.startTyre} -> L${setupConfig.p2.pit1Lap} ${setupConfig.p2.pit1Tyre} -> L${setupConfig.p2.pit2Lap} ${setupConfig.p2.pit2Tyre}`,
-        p1Time: winnerId === 'p1' ? (winTime / 1000).toFixed(2) + 's' : 'DNF',
-        p2Time: winnerId === 'p2' ? (winTime / 1000).toFixed(2) + 's' : 'DNF',
+        p1Time: p1.finished ? (p1.time / 1000).toFixed(2) + 's' : 'DNF',
+        p2Time: p2.finished ? (p2.time / 1000).toFixed(2) + 's' : 'DNF',
         p1Payoff: winnerId === 'p1' ? 1 : -1,
         p2Payoff: winnerId === 'p2' ? 1 : -1,
     };
 
-    setGameState(prev => ({ ...prev, winner: winnerName, matrixData }));
+    setGameState(prev => ({ ...prev, winner: winnerName, matrixData, countdown: null }));
     setPhase('FINISHED');
   };
 
   const generateAIAdvice = (car, opponent, maxL) => {
       const health = Math.max(0, 100 - (car.tyreAgeLaps / TYRE_SPECS[car.currentTyre].limitLaps) * 100);
-      if (car.inPit) return "Goal Programming constraint satisfied: Minimizing pit time penalty.";
+      const inPitLaneArea = car.x > 280 && car.x < 620 && car.y > 495;
+      
+      if (car.inPit) return "Goal Programming constraint satisfied. Minimizing pit time penalty.";
+      if (inPitLaneArea) return "F1 Regulation. Pit limiter active. Speed restricted to 20 km/h.";
       if (car.lap >= maxL) return "Six Sigma Target Reached. Finish line crossed!";
-      if (health < 15) return "Decision Tree Output: IF Health < 15 THEN PIT IMMEDIATELY! Maximize Random Forest payoff.";
-      if (health < 40) return "Markov Chain Probability: 85% chance of dropping to Critical State next lap. Prepare to Pit!";
-      if (car.speed < 2.0 && health > 50) return "Six Sigma Check: Speed Variance detected. Maintain optimal racing line to improve Cpk.";
-      if (car.lap === 1) return "Nash Equilibrium: Mixed Strategy Oddments suggest maintaining pace to read opponent.";
+      if (health < 15) return "Decision Tree Output. Health is critical. Pit immediately to maximize payoff.";
+      if (health < 40) return "Markov Chain Probability alert. High chance of dropping to Critical State next lap. Prepare to Pit.";
+      if (car.speed < 2.0 && health > 50) return "Six Sigma Check. Speed Variance detected. Maintain optimal racing line.";
+      if (car.lap === 1) return "Nash Equilibrium. Mixed Strategy Oddments suggest maintaining pace to read opponent.";
       if (opponent.currentTyre !== car.currentTyre) {
           if (TYRE_SPECS[car.currentTyre].maxSpeed > TYRE_SPECS[opponent.currentTyre].maxSpeed) {
-              return "MCDA Analysis: You have speed advantage. Push to maximize time delta!";
+              return "MCDA Analysis. You have speed advantage. Push to maximize time delta.";
           } else {
-              return "MCDA Analysis: Defend inner lines to optimize Goal Programming constraints against faster opponent.";
+              return "MCDA Analysis. Defend inner lines to optimize Goal Programming constraints.";
           }
       }
-      return "Process Capability (Cp) optimal. Maintain current trajectory.";
+      return "Process Capability optimal. Maintain current trajectory.";
   };
 
   const calculateLiveComputations = (car) => {
@@ -127,11 +161,11 @@ export default function App() {
       const cpk = Math.min((USL - mean) / (3 * sigma), (mean - LSL) / (3 * sigma));
 
       const markovProb = Math.min(99.9, Math.pow(car.tyreAgeLaps / limit, 2) * 100);
-
       const health = Math.max(0, 100 - (car.tyreAgeLaps / limit) * 100);
       const dtPath = `Root -> IF(Health<15):[${health < 15 ? 'TRUE->PIT' : 'FALSE->TRACK'}]`;
-
-      const gpObj = car.inPit ? "Constraint=Penalty(1s)" : `MaxSpeed=${USL}`;
+      
+      const inPitLaneArea = car.x > 280 && car.x < 620 && car.y > 495;
+      const gpObj = car.inPit ? "Constraint=Penalty(1s)" : (inPitLaneArea ? "Constraint=PitLimiter(20km/h)" : `MaxSpeed=${USL}`);
 
       return {
           sixSigma: `μ: ${mean.toFixed(1)}, σ: ${sigma.toFixed(2)}, Cpk: ${cpk.toFixed(2)}`,
@@ -148,7 +182,7 @@ export default function App() {
 
     if (car.inPit) {
       car.speed = 0;
-      if (Date.now() - car.pitTimer > PIT_TIME_PENALTY) {
+      if (getCurrentTime() - car.pitTimer > PIT_TIME_PENALTY) {
         const nextTyre = car.tyreQueue.shift();
         if (nextTyre) car.currentTyre = nextTyre;
         car.tyreAgeLaps = 0; 
@@ -161,7 +195,7 @@ export default function App() {
     if (car.x > 430 && car.x < 470 && car.y > 510) {
         if (car.pittedLap !== car.lap) {
             car.inPit = true;
-            car.pitTimer = Date.now();
+            car.pitTimer = getCurrentTime();
             car.speed = 0;
             return;
         }
@@ -170,6 +204,12 @@ export default function App() {
     let actualMaxSpeed = specs.maxSpeed;
     if (car.tyreAgeLaps >= specs.limitLaps) {
         actualMaxSpeed = MIN_DEGRADED_SPEED; 
+    }
+
+    const inPitLaneArea = car.x > 280 && car.x < 620 && car.y > 495;
+    if (inPitLaneArea) {
+        actualMaxSpeed = 1.0; 
+        if (car.speed > 1.0) car.speed = 1.0; 
     }
 
     if (game.current.keys[controls.fwd]) car.speed = Math.min(car.speed + 0.1, actualMaxSpeed);
@@ -201,17 +241,39 @@ export default function App() {
         car.lapCooldown = true;
         setTimeout(() => (car.lapCooldown = false), 2000);
         
-        if (car.lap >= maxLaps && !game.current.raceEnded) {
-            game.current.raceEnded = true;
+        if (car.lap >= maxLaps) {
             car.finished = true;
-            car.time = Date.now() - game.current.startTime;
-            checkRaceOver(playerId, car.time);
+            car.speed = 0;
+            car.time = getCurrentTime() - game.current.startTime;
+            
+            if (!game.current.firstFinisher) {
+                game.current.firstFinisher = playerId;
+                game.current.finishTimer = getCurrentTime();
+                const pName = playerId === 'p1' ? 'Player 1' : 'Player 2';
+                playVoiceCommand(`${pName} has crossed the finish line. 10 seconds remaining for the race to end.`);
+            } else {
+                game.current.raceEnded = true;
+                checkRaceOver();
+            }
         }
       }
     }
 
-    if (game.current.frameCount % 120 === 0) {
-        car.message = generateAIAdvice(car, opponent, maxLaps);
+    if (!car.finished && game.current.frameCount % 180 === 0) {
+        const oldMsg = car.message;
+        const newMsg = generateAIAdvice(car, opponent, maxLaps);
+        
+        if (oldMsg !== newMsg) {
+            car.message = newMsg;
+            const playerName = playerId === 'p1' ? 'Player 1' : 'Player 2';
+            let speechText = `${playerName}, ${newMsg}`;
+            
+            if (newMsg.includes("Pit immediately") || newMsg.includes("Prepare to Pit")) {
+                speechText = `Box box box. ${playerName}, ${newMsg}`;
+            }
+            
+            playVoiceCommand(speechText, playerId === 'p1' ? 1.0 : 0.8);
+        }
     }
   };
 
@@ -243,6 +305,16 @@ export default function App() {
     ctx.fillStyle = 'black';
     ctx.font = "12px Arial";
     ctx.fillText("PITLANE", 425, 575);
+
+    if (game.current.finishTimer && !game.current.raceEnded) {
+        const elapsed = getCurrentTime() - game.current.finishTimer;
+        game.current.countdown = Math.max(0, 10 - Math.floor(elapsed / 1000));
+
+        if (elapsed > 10000) {
+            game.current.raceEnded = true;
+            checkRaceOver();
+        }
+    }
 
     updateCar(game.current.p1, game.current.p2, { fwd: 'w', back: 's', left: 'a', right: 'd' }, ctx, 'p1');
     updateCar(game.current.p2, game.current.p1, { fwd: 'ArrowUp', back: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }, ctx, 'p2');
@@ -306,6 +378,7 @@ export default function App() {
 
         setGameState(prev => ({
             ...prev,
+            countdown: game.current.countdown,
             p1: { lap: game.current.p1.lap, tyreHealth: Math.max(0, 100 - (game.current.p1.tyreAgeLaps / p1Limit)*100), speed: game.current.p1.speed, currentTyre: game.current.p1.currentTyre, message: game.current.p1.message, computations: p1Comps },
             p2: { lap: game.current.p2.lap, tyreHealth: Math.max(0, 100 - (game.current.p2.tyreAgeLaps / p2Limit)*100), speed: game.current.p2.speed, currentTyre: game.current.p2.currentTyre, message: game.current.p2.message, computations: p2Comps }
         }));
@@ -344,7 +417,7 @@ export default function App() {
               </button>
 
               {showGuide && (
-                  <div className="absolute inset-0 bg-opacity-50 z-50 flex items-center justify-center p-8">
+                  <div className="absolute inset-0 bg-black bg-opacity-95 z-50 flex items-center justify-center p-8">
                       <div className="bg-gray-800 p-8 rounded-lg max-w-3xl border border-gray-600 shadow-2xl">
                           <h2 className="text-3xl font-bold text-yellow-400 mb-4">Academic Strategy Application</h2>
                           <div className="space-y-4 text-gray-300">
@@ -494,7 +567,7 @@ export default function App() {
           </div>
 
           <div className="flex-grow bg-black rounded border border-green-500 p-3 font-mono text-xs overflow-hidden flex flex-col justify-start shadow-[inset_0_0_10px_rgba(0,255,0,0.1)]">
-              <span className="text-green-500 font-bold border-b border-green-800 pb-1 mb-2 block"> LIVE_COMPUTATIONS</span>
+              <span className="text-green-500 font-bold border-b border-green-800 pb-1 mb-2 block">&gt; LIVE_COMPUTATIONS</span>
               <div className="space-y-2 text-green-400">
                   <p><span className="text-gray-400">SixSigma[Cpk]:</span><br/>{gameState.p1.computations.sixSigma}</p>
                   <p><span className="text-gray-400">MarkovChain:</span><br/>{gameState.p1.computations.markov}</p>
@@ -505,6 +578,13 @@ export default function App() {
         </div>
 
         <div className="relative shadow-2xl flex-shrink-0 border-4 border-gray-700 rounded-lg overflow-hidden bg-white self-center">
+          
+          {gameState.countdown !== null && (
+            <div className="absolute top-10 left-1/2 transform -translate-x-1/2 bg-red-600 text-white px-8 py-3 rounded-lg font-extrabold text-2xl animate-pulse z-40 border-4 border-yellow-400 shadow-2xl">
+                RACE ENDING IN: {gameState.countdown}s
+            </div>
+          )}
+
           <canvas ref={canvasRef} width="800" height="600" className="block"></canvas>
           
           {phase === 'FINISHED' && (
@@ -567,7 +647,7 @@ export default function App() {
           </div>
 
           <div className="flex-grow bg-black rounded border border-blue-500 p-3 font-mono text-xs overflow-hidden flex flex-col justify-start shadow-[inset_0_0_10px_rgba(0,0,255,0.1)]">
-              <span className="text-blue-500 font-bold border-b border-blue-800 pb-1 mb-2 block"> LIVE_COMPUTATIONS</span>
+              <span className="text-blue-500 font-bold border-b border-blue-800 pb-1 mb-2 block">&gt; LIVE_COMPUTATIONS</span>
               <div className="space-y-2 text-blue-400">
                   <p><span className="text-gray-400">SixSigma[Cpk]:</span><br/>{gameState.p2.computations.sixSigma}</p>
                   <p><span className="text-gray-400">MarkovChain:</span><br/>{gameState.p2.computations.markov}</p>
