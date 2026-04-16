@@ -40,6 +40,7 @@ export default function App() {
   const [maxLaps, setMaxLaps] = useState(10);
   const [showGuide, setShowGuide] = useState(false);
   
+  // GAME THEORY: Players formulate a Mixed Strategy Profile (3x3 Strategy Space) before the race begins.
   const [setupConfig, setSetupConfig] = useState({
     p1: { startTyre: 'Soft', pit1Lap: 3, pit1Tyre: 'Medium', pit2Lap: 7, pit2Tyre: 'Hard' },
     p2: { startTyre: 'Hard', pit1Lap: 5, pit1Tyre: 'Medium', pit2Lap: 8, pit2Tyre: 'Soft' }
@@ -110,6 +111,7 @@ export default function App() {
 
     const winnerName = winnerId === 'p1' ? 'Player 1' : 'Player 2';
     
+    // GAME THEORY: Extracts the Normal-Form Game Payoff Matrix (Zero-Sum) based on race results.
     const matrixData = {
         p1Strategy: `Start ${setupConfig.p1.startTyre} -> L${setupConfig.p1.pit1Lap} ${setupConfig.p1.pit1Tyre} -> L${setupConfig.p1.pit2Lap} ${setupConfig.p1.pit2Tyre}`,
         p2Strategy: `Start ${setupConfig.p2.startTyre} -> L${setupConfig.p2.pit1Lap} ${setupConfig.p2.pit1Tyre} -> L${setupConfig.p2.pit2Lap} ${setupConfig.p2.pit2Tyre}`,
@@ -127,17 +129,26 @@ export default function App() {
       const health = Math.max(0, 100 - (car.tyreAgeLaps / TYRE_SPECS[car.currentTyre].limitLaps) * 100);
       const inPitLaneArea = car.x > 280 && car.x < 620 && car.y > 495;
       
+      // GOAL PROGRAMMING: AI confirms constraint satisfaction for the pit stop penalty.
       if (car.inPit) return "Goal Programming constraint satisfied. Minimizing pit time penalty.";
       if (inPitLaneArea) return "F1 Regulation. Pit limiter active. Speed restricted to 20 km/h.";
+      // SIX SIGMA: Final goal state reached.
       if (car.lap >= maxL) return "Six Sigma Target Reached. Finish line crossed!";
+      // DECISION TREE: Evaluates root node (Health < 15) to classify optimal emergency action.
       if (health < 15) return "Decision Tree Output. Health is critical. Pit immediately to maximize payoff.";
+      // MARKOV CHAIN: Predicts probability of transitioning to Critical State in the near future.
       if (health < 40) return "Markov Chain Probability alert. High chance of dropping to Critical State next lap. Prepare to Pit.";
+      // SIX SIGMA: Checks for high variance (defects) in the driving process when speed drops erratically.
       if (car.speed < 2.0 && health > 50) return "Six Sigma Check. Speed Variance detected. Maintain optimal racing line.";
+      // GAME THEORY: AI suggests using Oddments method to maintain unpredictability during early phase.
       if (car.lap === 1) return "Nash Equilibrium. Mixed Strategy Oddments suggest maintaining pace to read opponent.";
+      
       if (opponent.currentTyre !== car.currentTyre) {
           if (TYRE_SPECS[car.currentTyre].maxSpeed > TYRE_SPECS[opponent.currentTyre].maxSpeed) {
+              // MCDA: Evaluates conflicting criteria (My Speed vs Opponent Speed) to suggest a pushing trade-off.
               return "MCDA Analysis. You have speed advantage. Push to maximize time delta.";
           } else {
+              // MCDA: Suggests a defensive trade-off to satisfy Goal Programming constraints against a faster car.
               return "MCDA Analysis. Defend inner lines to optimize Goal Programming constraints.";
           }
       }
@@ -152,6 +163,7 @@ export default function App() {
       if (car.speedHistory.length > 60) car.speedHistory.shift();
 
       const n = car.speedHistory.length;
+      // SIX SIGMA: Calculates Mean (μ) and Standard Deviation (σ) of driving speed to find Process Capability Index (Cpk).
       const mean = car.speedHistory.reduce((a, b) => a + b, 0) / (n || 1);
       const variance = car.speedHistory.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / (n || 1);
       const sigma = Math.sqrt(variance) + 0.001; 
@@ -160,11 +172,15 @@ export default function App() {
       const LSL = 20;
       const cpk = Math.min((USL - mean) / (3 * sigma), (mean - LSL) / (3 * sigma));
 
+      // MARKOV CHAIN: Mathematical probability P(Critical | Current) of tyre failure based on usage ratio.
       const markovProb = Math.min(99.9, Math.pow(car.tyreAgeLaps / limit, 2) * 100);
       const health = Math.max(0, 100 - (car.tyreAgeLaps / limit) * 100);
+      
+      // DECISION TREE: Visualizes the IF/THEN classification path for tyre health.
       const dtPath = `Root -> IF(Health<15):[${health < 15 ? 'TRUE->PIT' : 'FALSE->TRACK'}]`;
       
       const inPitLaneArea = car.x > 280 && car.x < 620 && car.y > 495;
+      // GOAL PROGRAMMING: Dynamically changes the objective function based on physical constraints (Track vs Pitlane).
       const gpObj = car.inPit ? "Constraint=Penalty(1s)" : (inPitLaneArea ? "Constraint=PitLimiter(20km/h)" : `MaxSpeed=${USL}`);
 
       return {
